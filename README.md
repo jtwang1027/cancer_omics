@@ -8,7 +8,10 @@ DREAM challenge- Single cell signaling in breast cancer (genomics, transcriptomi
 biological motivation
 
 
-This challenge involves analysis of the largest single cell signaling dataset (67 cancer cell . The motivation
+This challenge involves analysis of the largest single cell signaling dataset (67 cancer cell lines). The motivation is to understand the heterogenous, time-dependent responses to multiple drug treatments. In understanding single-cell and cancer line responses to treatments, we aim to predict responses to drug candidates.
+
+
+
 
 
 https://www.synapse.org/#!Synapse:syn20366914/wiki/593925
