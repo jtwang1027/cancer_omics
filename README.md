@@ -13,6 +13,14 @@ This challenge involves analysis of the largest single cell signaling dataset (6
 ![dream](https://user-images.githubusercontent.com/46359281/71548582-88190c00-2965-11ea-97fd-6dedbb1eeb4a.png)
 
 
-
-
 https://www.synapse.org/#!Synapse:syn20366914/wiki/593925
+
+This analysis will be broken down into:
+
+1. Exploratory data analysis: Examining time-dependent drug responses and identifying similarities in cell lines.
+
+2. Investigating feature importance in predicting phosphorylation changes in response to drug treatment using elastic net (ridge, LASSO) and tree-based models (random forests, xgboost)
+
+3. Prediction using neural networks 
+
+4. Prediction using automl (tpot) with comparison to the above models.
