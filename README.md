@@ -17,7 +17,7 @@ https://www.synapse.org/#!Synapse:syn20366914/wiki/593925
 
 This analysis will be broken down into:
 
-1. Exploratory data analysis: Examining time-dependent drug responses and identifying similarities in cell lines.
+1. Exploratory data analysis: Examining time-dependent drug responses and identifying similarities in cell lines. Looking at CNV data to identify potential sources of gene dysregulation.
 
 2. Investigating feature importance in predicting phosphorylation changes in response to drug treatment using elastic net (ridge, LASSO) and tree-based models (random forests, xgboost)
 
