@@ -1,14 +1,9 @@
 ---
-title: "Integrating RNA, phospho-proteomic, and proteomic data with Mixomics"
+title: "Integrating RNA, phospho-proteomic, and proteomic data with PLS in Mixomics"
 output: html_document
 ---
 
-Resources:
 
-https://mixomicsteam.github.io/Bookdown/
-https://www.bioconductor.org/packages/release/bioc/vignettes/mixOmics/inst/doc/vignette.html
-man page: https://www.bioconductor.org/packages/devel/bioc/manuals/mixOmics/man/mixOmics.pdf
-https://rstudio-pubs-static.s3.amazonaws.com/376158_5a59d491abfd4266acaa05773bc1751a.html
 
 
 ```{r setup, include=FALSE}
@@ -16,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r echo=TRUE, message=FALSE, warning=FALSE, result='hide'}
 pkg=c("mixOmics", "dplyr")
 
 lapply(pkg, require, character.only = TRUE)
@@ -26,16 +21,12 @@ setwd("/Users/jason/Documents/git_repos/cancer_omics")
 ```
 
 
-N-integration
+Given proteomics, rna, and phospho-proteomics datda, can you predict phosphorylation response to EGF treatment? 
 
-Given proteomics & rna, can you predict phospho response to treatment? EGF/iMEK/iPI3K/iEGFR
+We have initial state for each of these 3 data typles. The goal is to predict the phosphorylation of MEKK4 and IdU after 1 hour of EGF treatment
 
-We have initial state rna and protein expression. predict fold increase in response to EGF
-full=basal condition
 
-predict her2 phosphorylation
-
-how does egf time0 compare to full control condition?
+Load proteomics and RNA data:
 ```{r load proteomics/rna data}
 rna=read.csv("/Users/jason/Documents/git_repos/cancer_omics/rnaseqexononly_marcotte.csv")
 prot= read.csv("/Users/jason/Documents/git_repos/cancer_omics/proteomics_consolidated.csv")
@@ -55,10 +46,7 @@ prot=prot[order(row.names(prot)),]
 ```
 
 
-block pls
-
-
-
+Load phospho-proteomics data:
 ```{r load phosphorylation data}
 phosphoprot=read.csv("/Users/jason/Documents/git_repos/cancer_omics/median_phospho_data.csv")
 phosphoprot =phosphoprot[ order(phosphoprot$cell_line), ] #sort by cell_line name
@@ -67,14 +55,14 @@ phosphoprot =phosphoprot[ order(phosphoprot$cell_line), ] #sort by cell_line nam
 #control/baseline phospho data used for prediction
 phospho=filter(phosphoprot, treatment=="EGF", time==0) #baseline phospho data
 rownames(phospho)= phospho$cell_line #set cell_line to rowname
-phospho=select(phospho, -c("treatment","time","cell_line","p.MKK4","IdU")) #drop unneeded & predictor columns
+phospho=select(phospho, -c("treatment","time","cell_line","p.MKK4","p.GSK3b")) #drop unneeded & predictor columns
 
 
 ##predictor column
 Y=filter(phosphoprot, treatment=="EGF", time==60)  #predicted column, EGF phoshorylation result 1hr after treatment
 rownames(Y)= Y$cell_line
 
-Y= select(Y,c('p.MKK4','IdU')) #drop other columns
+Y= select(Y,c('p.MKK4','p.GSK3b')) #drop other columns
 
 
 #comparing repsonses for each phosphoprotein
@@ -85,7 +73,7 @@ boxplot(phospho, use.columns=TRUE, xlab="phospho-protein", ylab="phosphorylation
 ```
 
 
-
+Train-test split on data. Creating input X matrix and dependent matrix Y
 
 ```{r train-test split }
 #final list has 59 cell lines, split off 10% (6 lines from test set validation)
@@ -121,10 +109,43 @@ X <- list(RNA = rna_train ,
 
 
 
+Fit regression model. 
+```{r fitting}
+#reduce complexity, remove if you have low sample number
+#keepx: number of (top) variables to select from the first two components of PCA
+#list.keepX <- list(RNA = c(20, 20), phospho = c(8,8), protein = c(5, 5))
+
+#features are centered and scaled by default
+MyResult.diablo <- block.pls(X, Ytrain)
+```
+
+
+
+```{r extracting additional info from pls object}
+loadings1=selectVar(MyResult.diablo, comp = 1) #loadings for component 1
+loadings2=selectVar(MyResult.diablo, comp = 2) #loadings for component 2
+
+#loadings$RNA$value # will have loadinpgs for RNA block
+
+#raw data can be pulled from :
+#MyResult.diablo$X
+
+
+#number of components used for each block:
+#MyResult.diablo$ncomp
+
+#variates
+#MyResult.diablo$variates
+
+#weighting on each components
+#MyResult.diablo$weights
+
+```
 
 
 
 
+Plot where individual cell lines fit on new components in each data type.
 ```{r sample plot}
 #reduce complexity, remove if you have low sample number
 #keepx: number of (top) variables to select from the first two components of PCA
@@ -135,10 +156,15 @@ MyResult.diablo <- block.pls(X, Ytrain)
 
 plotIndiv(MyResult.diablo, ind.names = FALSE)
 
+
 ```
+
 
 Documentation on how the "predict" function works
 https://rdrr.io/cran/mixOmics/man/predict.html
+
+Generating predictions based on the pls model and evaluating the predictions.
+
 ```{r generate predictions and evaluate}
 #assembling test data
 Xtest <- list(RNA = rna_test ,
@@ -155,29 +181,27 @@ ypredict=predict(MyResult.diablo, newdata = Xtest)
 #grab dim2 columns and average
 avg_pred=(ypredict$predict$RNA[,,2] +ypredict$predict$phospho[,,2])/2
 
-print("phosphorylation predictions aftr 1hr EGF treatment for 6 cell lines")
+#phosphorylation predictions aftr 1hr EGF treatment for 6 cell lines"
 print(avg_pred)
 
 
 
 #calculate RMSE
 rmse=colMeans((avg_pred- Ytest)^2)
-
-
-print("RMSE:")
 print(rmse)
 
 ```
 
 
 
-
-```{r variable plot}
+Weighting of each feature in each loading.
+```{r variable plot, warning=FALSE}
 plotVar(MyResult.diablo, overlap= F) # too many features to visualize
 
 ```
 
 
+Top features for each loading in component 1 and 2
 ```{r visualize component 1 loadings}
 #component 1 loading
 plotLoadings(MyResult.diablo,comp=1, contrib = "max")
@@ -190,3 +214,31 @@ plotLoadings(MyResult.diablo,comp=2, contrib = "max")
 ```
 
 
+How do the top loadings match expectations? The phospho-proteomic data has the largest loadings by magnitude and largest proportion of explained variance. The top loadings for the phospho-proteome align with expectations for both MEKK4 and p.GSK3b. 
+
+- MEKK4 is mitogen activated protein kinase, and is expected to be phosphoylated with mitogen treatment (such as EGF). Within the network of MEKK4 signaling are: other MAPK/MEKK/ERK signaling and TGF-beta/SMAD signaling.
+We find the components of the loadings to be significant and in the same direction as p.MKK4. 
+
+```{r p.Mekk4 in component1 }
+#correlation with downregulation of p.mkk4
+head(loadings1$phospho$value,15)
+```
+
+
+
+With component 2, we can better see correlations with p-GSK3b. We see a similar trend with known targets beta catenin and 4EBP1.
+```{r p.gsk3b in component2 }
+#correlation with downregulation of p.mkk4
+head(loadings2$phospho$value,15)
+```
+
+
+
+
+
+Resources:
+
+https://mixomicsteam.github.io/Bookdown/
+https://www.bioconductor.org/packages/release/bioc/vignettes/mixOmics/inst/doc/vignette.html
+man page: https://www.bioconductor.org/packages/devel/bioc/manuals/mixOmics/man/mixOmics.pdf
+https://rstudio-pubs-static.s3.amazonaws.com/376158_5a59d491abfd4266acaa05773bc1751a.html
