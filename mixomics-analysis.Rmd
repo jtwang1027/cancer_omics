@@ -1,0 +1,192 @@
+---
+title: "Integrating RNA, phospho-proteomic, and proteomic data with Mixomics"
+output: html_document
+---
+
+Resources:
+
+https://mixomicsteam.github.io/Bookdown/
+https://www.bioconductor.org/packages/release/bioc/vignettes/mixOmics/inst/doc/vignette.html
+man page: https://www.bioconductor.org/packages/devel/bioc/manuals/mixOmics/man/mixOmics.pdf
+https://rstudio-pubs-static.s3.amazonaws.com/376158_5a59d491abfd4266acaa05773bc1751a.html
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+pkg=c("mixOmics", "dplyr")
+
+lapply(pkg, require, character.only = TRUE)
+
+
+setwd("/Users/jason/Documents/git_repos/cancer_omics")
+```
+
+
+N-integration
+
+Given proteomics & rna, can you predict phospho response to treatment? EGF/iMEK/iPI3K/iEGFR
+
+We have initial state rna and protein expression. predict fold increase in response to EGF
+full=basal condition
+
+predict her2 phosphorylation
+
+how does egf time0 compare to full control condition?
+```{r load proteomics/rna data}
+rna=read.csv("/Users/jason/Documents/git_repos/cancer_omics/rnaseqexononly_marcotte.csv")
+prot= read.csv("/Users/jason/Documents/git_repos/cancer_omics/proteomics_consolidated.csv")
+
+#set cell_line to row_names
+rownames(rna)= rna$X
+rownames(prot)= prot$X
+
+rna=select(rna, -"X")
+prot=select(prot, -"X")
+
+
+#order by rownames
+rna=rna[order(row.names(rna)),]
+prot=prot[order(row.names(prot)),]
+
+```
+
+
+block pls
+
+
+
+```{r load phosphorylation data}
+phosphoprot=read.csv("/Users/jason/Documents/git_repos/cancer_omics/median_phospho_data.csv")
+phosphoprot =phosphoprot[ order(phosphoprot$cell_line), ] #sort by cell_line name
+#basal=phospho[phospho$treatment=="full",]
+
+#control/baseline phospho data used for prediction
+phospho=filter(phosphoprot, treatment=="EGF", time==0) #baseline phospho data
+rownames(phospho)= phospho$cell_line #set cell_line to rowname
+phospho=select(phospho, -c("treatment","time","cell_line","p.MKK4","IdU")) #drop unneeded & predictor columns
+
+
+##predictor column
+Y=filter(phosphoprot, treatment=="EGF", time==60)  #predicted column, EGF phoshorylation result 1hr after treatment
+rownames(Y)= Y$cell_line
+
+Y= select(Y,c('p.MKK4','IdU')) #drop other columns
+
+
+#comparing repsonses for each phosphoprotein
+boxplot(phospho, use.columns=TRUE, xlab="phospho-protein", ylab="phosphorylation level", main="Phoshporylation distributions") #skip non-numeric columns
+
+
+
+```
+
+
+
+
+```{r train-test split }
+#final list has 59 cell lines, split off 10% (6 lines from test set validation)
+cell_inter=intersect(rownames(rna), rownames(prot))
+cell_inter= intersect(cell_inter, rownames(phospho))
+
+incommon=length(cell_inter)
+#train/test: 90/10 split based on cell lines
+train= head(cell_inter, incommon-6)
+test= tail(cell_inter, 6)
+
+
+rna_train=rna[rownames(rna) %in% train,]  %>% as.matrix()
+prot_train=prot[rownames(prot) %in% train,]  %>% as.matrix()
+phos_train=phospho[rownames(phospho) %in% train,] %>% as.matrix()
+
+Ytrain=Y[rownames(Y) %in% train,] %>% as.matrix() #2 columns
+
+
+rna_test=rna[rownames(rna) %in% test,] #%>% as.matrix()
+prot_test=prot[rownames(prot) %in% test,] # %>% as.matrix()
+phos_test=phospho[rownames(phospho) %in% test,] # %>% as.matrix()
+Ytest=Y[rownames(Y) %in% test,] %>% as.matrix()
+
+
+#mixomics expects list of matrices (with each matrix containing a datatype)
+X <- list(RNA = rna_train ,
+          phospho = phos_train,
+          protein = prot_train)
+
+
+```
+
+
+
+
+
+
+
+```{r sample plot}
+#reduce complexity, remove if you have low sample number
+#keepx: number of (top) variables to select from the first two components of PCA
+#list.keepX <- list(RNA = c(20, 20), phospho = c(8,8), protein = c(5, 5))
+
+#features are centered and scaled by default
+MyResult.diablo <- block.pls(X, Ytrain)
+
+plotIndiv(MyResult.diablo, ind.names = FALSE)
+
+```
+
+Documentation on how the "predict" function works
+https://rdrr.io/cran/mixOmics/man/predict.html
+```{r generate predictions and evaluate}
+#assembling test data
+Xtest <- list(RNA = rna_test ,
+          phospho = phos_test,
+          protein = prot_test)
+
+#generating predictions and extracting data
+ypredict=predict(MyResult.diablo, newdata = Xtest)
+
+
+#missing values in proteomic test data lead to NaN prediction from that block
+#instead of averaging from all 3 datatypes, average from the RNA and phospho block
+
+#grab dim2 columns and average
+avg_pred=(ypredict$predict$RNA[,,2] +ypredict$predict$phospho[,,2])/2
+
+print("phosphorylation predictions aftr 1hr EGF treatment for 6 cell lines")
+print(avg_pred)
+
+
+
+#calculate RMSE
+rmse=colMeans((avg_pred- Ytest)^2)
+
+
+print("RMSE:")
+print(rmse)
+
+```
+
+
+
+
+```{r variable plot}
+plotVar(MyResult.diablo, overlap= F) # too many features to visualize
+
+```
+
+
+```{r visualize component 1 loadings}
+#component 1 loading
+plotLoadings(MyResult.diablo,comp=1, contrib = "max")
+```
+
+
+```{r visualize component 2 loadings}
+#component 2 loading
+plotLoadings(MyResult.diablo,comp=2, contrib = "max")
+```
+
+
