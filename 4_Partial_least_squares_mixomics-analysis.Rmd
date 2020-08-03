@@ -187,7 +187,7 @@ print(avg_pred)
 
 
 #calculate RMSE
-rmse=colMeans((avg_pred- Ytest)^2)
+rmse=colMeans((avg_pred- Ytest)^2) %>% sqrt()
 print(rmse)
 
 ```
